@@ -2,11 +2,13 @@
 // Drafter League of Legends : ordre de draft de tournoi, mode fearless (séries), drafts sauvegardés pour le roster,
 // préparation (rôle, note et variantes par pick, bans proposés, plan de jeu), lecture des compos (données Riot) et
 // suggestions tirées des parties classées de nos joueurs,
-// op.gg multi de notre équipe et de l'adversaire. Champions et icônes : Data Dragon (Riot), à jour automatiquement.
+// op.gg multi de notre équipe et de l'adversaire, analyse de l'équipe d'en face par Oni Bot (scouting, 20/10) qui nourrit
+// les bans et picks conseillés. Champions et icônes : Data Dragon (Riot), à jour automatiquement.
 import Qg from './Qg.astro';
 import { rosterMembers, scope, teamUser } from './outils';
 import { rows } from '../db';
-import { links } from './stats';
+import { REGIONS, links } from './stats';
+import { riotIds } from './actions/base';
 
 export const prerender = false;
 const t = await teamUser(Astro.cookies);
@@ -42,12 +44,16 @@ for (const r of lolRosters) {
     pool.push({ name: m.name, poste: postes.get(m.id) ?? null, champs });
   }
 }
+// Équipe d'en face : fiches Scouting du roster qui contiennent des Riot ID, et liste passée par l'adresse (?vs=, depuis une fiche)
+const fiches = lolRosters.length ? (await rows<{ id: number; name: string; players: string | null }>(`SELECT id, name, players FROM opponents WHERE roster_id IN (${lolRosters.map(() => '?').join(',')}) ORDER BY updated_at DESC LIMIT 30`, ...lolRosters.map((r) => r.id)).catch(() => []))
+  .map((o) => ({ name: o.name, ids: riotIds(o.players) })).filter((o) => o.ids.length) : [];
+const vs = riotIds((Astro.url.searchParams.get('vs') ?? '').replace(/,/g, '\n'));
 ---
 <Qg title="Drafter LoL · Inside" heading="Drafter LoL" lead="Prépare tes drafts dans l'ordre de tournoi, garde-les pour le roster, joue en fearless." current="lol" rosters={me.rosters} staff={me.staff || me.games.length > 0} contenu={me.staff || me.content.length > 0} communaute={me.community} active={sc.active} user={{ name: t.me.member?.name ?? t.user.name, avatar: t.me.member?.avatar ?? t.user.avatar }}>
-  <section class="dr" data-drafter data-rosters={JSON.stringify(lolRosters.map((r) => ({ id: r.id, name: r.name })))} data-pool={JSON.stringify(pool)} data-faced={JSON.stringify(faced)}>
+  <section class="dr" data-drafter data-rosters={JSON.stringify(lolRosters.map((r) => ({ id: r.id, name: r.name })))} data-pool={JSON.stringify(pool)} data-faced={JSON.stringify(faced)} data-vs={JSON.stringify(vs)}>
     <div>
       <div class="dr-top">
-        <p class="dr-step" data-step aria-live="polite">Chargement des champions…</p>
+        <div class="dr-now"><p class="dr-step" data-step aria-live="polite">Chargement des champions…</p><div class="dr-advice" data-advice aria-live="polite"></div></div>
         <div class="dr-actions">
           <div class="dr-seg" role="group" aria-label="Notre côté"><span>Notre côté</span><button type="button" data-ours="blue" aria-pressed="true">Bleu</button><button type="button" data-ours="red" aria-pressed="false">Rouge</button></div>
           <div class="dr-seg" role="group" aria-label="Un clic sur un champion"><span>Un clic</span><button type="button" data-mode="draft" aria-pressed="true">Draft</button><button type="button" data-mode="plan" aria-pressed="false">Ban proposé</button><button type="button" data-mode="variant" aria-pressed="false" disabled>Variante</button></div>
@@ -78,6 +84,19 @@ for (const r of lolRosters) {
           <ol class="dr-picks" data-picks="red"><li><span class="dr-empty">R1</span></li><li><span class="dr-empty">R2</span></li><li><span class="dr-empty">R3</span></li><li><span class="dr-empty">R4</span></li><li><span class="dr-empty">R5</span></li></ol>
         </div>
       </div>
+
+      <section class="dr-opp" aria-labelledby="dr-opp-title">
+        <div class="dr-opp__form">
+          <h3 id="dr-opp-title">Équipe d'en face</h3>
+          <p class="eq-note">Colle leurs Riot ID : Oni Bot analyse chaque joueur dans la minute (rang, maîtrise, champions et postes de ses dernières classées). Les bans et picks conseillés en tiennent compte.</p>
+          {fiches.length > 0 && <label>Depuis une fiche Scouting<select data-opp-fiche><option value="">—</option>{fiches.map((f) => <option value={f.ids.join('\n')}>{f.name}</option>)}</select></label>}
+          <label>Riot ID, un par ligne<textarea rows="5" data-opp placeholder="Pseudo#EUW" spellcheck="false">{vs.join('\n')}</textarea></label>
+          <label>Région<select data-opp-region>{Object.entries(REGIONS).map(([k, v]) => <option value={k}>{v.label}</option>)}</select></label>
+          <div class="dr-opp__btns"><button type="button" class="btn" data-opp-scan>Analyser</button><button type="button" class="btn btn--ghost" data-opp-go>op.gg multi</button></div>
+          <p class="eq-note" data-opp-status aria-live="polite"></p>
+        </div>
+        <ul class="dr-opp__list" data-opp-list><li class="eq-note">Aucun adversaire analysé pour ce draft.</li></ul>
+      </section>
 
       <div class="dr-prep">
         <section class="dr-slot" data-slot-panel>
@@ -115,10 +134,9 @@ for (const r of lolRosters) {
           {!lolRosters.length && <p class="eq-note">Aucun roster LoL pour l'instant : le draft reste utilisable, sans sauvegarde.</p>}
         </form>
         <div class="dr-scout">
-          <h3>Scouting</h3>
+          <h3>Notre roster</h3>
           {oursMulti ? <a class="btn btn--ghost" href={oursMulti} rel="noopener">op.gg de notre roster</a> : <p class="eq-note">Les joueurs relient leur Riot ID dans <a href="/equipe/joueurs/">Joueurs</a> pour l'op.gg du roster.</p>}
-          <label>Adversaires (Riot ID, un par ligne)<textarea rows="5" data-opp placeholder="Pseudo#EUW"></textarea></label>
-          <button type="button" class="btn btn--ghost" data-opp-go>op.gg multi de l'adversaire</button>
+          <p class="eq-note">Les smurfs reliés dans Joueurs comptent dans les champions maîtrisés.</p>
         </div>
         <div class="dr-saved">
           <h3>Drafts du roster</h3>
@@ -138,6 +156,32 @@ for (const r of lolRosters) {
   .dr { padding-top: 2rem; }
   .dr-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; }
   .dr-step { font-family: var(--font-display); font-size: var(--step-1); margin: 0; }
+  .dr-now { display: grid; gap: .4rem; }
+  .dr-advice:empty { display: none; }
+  .dr-advice :global(p) { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: 0; font-size: .85rem; }
+  .dr-advice :global(b) { color: var(--lacquer); text-transform: uppercase; letter-spacing: .06em; font-size: .72rem; }
+  .dr-advice :global(button) { display: inline-flex; align-items: center; gap: .3rem; min-height: 32px; padding: 2px .55rem 2px 2px; border: 1px solid var(--line); background: none; color: var(--ink); font: 600 .8rem var(--font-body); cursor: pointer; transition: border-color .15s; }
+  .dr-advice :global(button:hover) { border-color: var(--lacquer); }
+  .dr-advice :global(button small) { color: var(--muted); font-weight: 400; }
+  .dr-advice :global(.is-them) { color: var(--muted); }
+  .dr-opp { display: grid; grid-template-columns: minmax(0, 18rem) minmax(0, 1fr); gap: 1.5rem; margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
+  .dr-opp h3 { font-family: var(--font-body); font-weight: 700; font-size: 1rem; margin: 0; }
+  .dr-opp__form { display: grid; gap: .7rem; align-content: start; }
+  .dr-opp__form label { display: grid; gap: .3rem; font-weight: 700; font-size: .85rem; }
+  .dr-opp__form :is(textarea, select) { width: 100%; box-sizing: border-box; padding: .45rem .6rem; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font: 400 .9rem var(--font-body); }
+  .dr-opp__btns { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .dr-opp__list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: .75rem; margin: 0; padding: 0; list-style: none; align-content: start; }
+  .dr-opp__list :global(.dr-oc) { display: grid; gap: .45rem; padding: .7rem .8rem; border: 1px solid var(--line); }
+  .dr-opp__list :global(.dr-oc.is-wait) { opacity: .7; }
+  .dr-opp__list :global(.dr-oc header) { display: grid; gap: .1rem; }
+  .dr-opp__list :global(.dr-oc header strong) { font-size: .95rem; overflow-wrap: anywhere; }
+  .dr-opp__list :global(.dr-oc header small) { color: var(--muted); font-size: .78rem; }
+  .dr-opp__list :global(.dr-oc__champs) { display: flex; flex-wrap: wrap; gap: .3rem; }
+  .dr-opp__list :global(.dr-oc__champs span) { display: grid; justify-items: center; width: 2.9rem; font-size: .66rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .dr-opp__list :global(.dr-oc__champs span.is-gone) { opacity: .35; }
+  .dr-opp__list :global(.dr-oc__mast) { font-size: .75rem; color: var(--muted); }
+  .dr-opp__list :global(.dr-oc a) { font-size: .75rem; color: var(--muted); }
+  @media (max-width: 760px) { .dr-opp { grid-template-columns: 1fr; } }
   .dr-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
   .dr-btn { min-height: 40px; padding: 0 .9rem; border: 1.5px solid var(--line); background: none; color: var(--ink); font: 700 .85rem var(--font-body); cursor: pointer; }
   .dr-btn:hover { border-color: var(--ink); }

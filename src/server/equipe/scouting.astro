@@ -7,6 +7,7 @@ import { loadDispos } from './dispos';
 import { exec, rows, weekKey } from '../db';
 import { md } from './ui';
 import { jeu } from './jeux';
+import { riotIds } from './actions/base';
 
 export const prerender = false;
 const t = await teamUser(Astro.cookies);
@@ -46,6 +47,22 @@ const J = jeu(sc.list[0]?.game);
 // Profils des joueurs adverses : un lien par pseudo de la liste « Joueurs », vers le tracker du jeu
 const profiles = (players: string) => !J?.scouting.profile ? [] : players.split(/\n+/).map((l) => l.replace(/^[-*•\s]+/, '').split(/\s+·\s+|\s+-\s+|,/)[0].trim()).filter((p) => p && p.length <= 40)
   .map((p) => ({ p, url: J.scouting.profile!(p) })).filter((x): x is { p: string; url: string } => !!x.url).slice(0, 10);
+// LoL (20/10) : analyse des joueurs adverses par Oni Bot (scout_lol), et passage direct au drafter avec leurs Riot ID
+type Sc = { ident: string; name: string | null; status: string; error: string | null; data: string | null; done_at: number | null };
+const scoutIds = current && sc.list[0]?.game === 'lol' ? riotIds(current.players) : [];
+const scouts = scoutIds.length ? await rows<Sc>(`SELECT ident, name, status, error, data, done_at FROM scout_lol WHERE region = 'euw' AND ident IN (${scoutIds.map(() => '?').join(',')})`, ...scoutIds.map((x) => x.toLowerCase())).catch(() => [] as Sc[]) : [];
+const TIER: Record<string, string> = { IRON: 'Fer', BRONZE: 'Bronze', SILVER: 'Argent', GOLD: 'Or', PLATINUM: 'Platine', EMERALD: 'Émeraude', DIAMOND: 'Diamant', MASTER: 'Maître', GRANDMASTER: 'Grand maître', CHALLENGER: 'Challenger' };
+const champName = (c: string) => (c === 'MonkeyKing' ? 'Wukong' : c.replace(/([a-z])([A-Z])/g, '$1 $2'));
+const scoutView = scoutIds.map((id) => {
+  const s = scouts.find((x) => x.ident === id.toLowerCase());
+  const d = s?.data ? JSON.parse(String(s.data)) : null;
+  const solo = d?.solo;
+  return { id, status: s?.status ?? null, error: s?.error ?? null, main: d?.main ?? null, games: d?.games ?? 0,
+    rank: d ? (solo ? `${TIER[solo.tier] ?? solo.tier}${['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(solo.tier) ? '' : ` ${solo.rank}`} · ${solo.lp} LP` : 'Non classé en solo') : null,
+    champs: (d?.champs ?? []).slice(0, 4).map((c: { c: string; g: number; w: number }) => `${champName(c.c)} ${c.g} (${Math.round((c.w / c.g) * 100)} %)`) as string[] };
+});
+const scoutPending = scoutView.some((x) => x.status === 'attente' || x.status === 'cours');
+const draftUrl = scoutIds.length ? `/equipe/lol/?${sc.active ? `r=${sc.active}&` : ''}vs=${encodeURIComponent(scoutIds.join(','))}` : null;
 // Annuaire des scrims : les équipes avec un statut, et le message « Proposer un scrim » avec nos prochains soirs jouables
 const STATUTS: Record<string, string> = { 'a-contacter': 'À contacter', contacte: 'Contacté', partenaire: 'Partenaire de scrim', non: 'Pas intéressé' };
 const annuaire = fiches.filter((f) => f.statut && f.statut !== 'non').sort((a, b) => ['partenaire', 'contacte', 'a-contacter'].indexOf(String(a.statut)) - ['partenaire', 'contacte', 'a-contacter'].indexOf(String(b.statut)));
@@ -110,6 +127,17 @@ const SECTIONS: [keyof O, string, string][] = [
         <p class="sc-meta">{rosterName.get(Number(current.roster_id))} · mise à jour le {fmt.format(new Date(Number(current.updated_at)))} par {names.get(current.author) ?? 'un membre'}</p>
         <div class="sc-grid">
           {SECTIONS.map(([k, label]) => current[k] ? <section class:list={['sc-sec', { 'is-plan': k === 'plan' }]}><h3>{label}</h3><div set:html={md(String(current[k]))} /></section> : null)}
+          {scoutIds.length > 0 && (
+            <section class="sc-sec sc-scout">
+              <h3>Analyse des joueurs <small>(Oni Bot, classées récentes)</small></h3>
+              <ul>{scoutView.map((x) => <li><strong>{x.id}</strong>{x.rank ? <span>{x.main ? `${x.main} · ` : ''}{x.rank}{x.champs.length ? ` · ${x.champs.join(', ')}` : ''}</span> : <span class="eq-note">{x.status === 'erreur' ? (x.error ?? 'Analyse impossible') : x.status ? 'Analyse en cours…' : 'Pas encore analysé'}</span>}</li>)}</ul>
+              <div class="sc-scout__btns">
+                <form method="post" action="/api/equipe/outils"><input type="hidden" name="action" value="scout" /><input type="hidden" name="ids" value={scoutIds.join('\n')} /><input type="hidden" name="back" value={(Astro.url.pathname + Astro.url.search).slice(0, 100)} /><button class="btn btn--ghost">{scoutView.some((x) => x.rank) ? 'Mettre à jour l\'analyse' : 'Analyser ces joueurs'}</button></form>
+                {draftUrl && <a class="btn" href={draftUrl}>Préparer la draft contre eux</a>}
+              </div>
+              {scoutPending && <p class="eq-note">Oni Bot analyse un joueur en une vingtaine de secondes : recharge la page dans une ou deux minutes.</p>}
+            </section>
+          )}
           {profiles(current.players).length > 0 && <section class="sc-sec"><h3>Profils {J?.label}</h3><ul>{profiles(current.players).map((x) => <li><a href={x.url} rel="noopener" target="_blank">{x.p}</a></li>)}</ul></section>}
           {current.links && <section class="sc-sec"><h3>Liens</h3><ul>{current.links.split(/\n+/).filter((l) => /^https?:\/\//.test(l.trim())).map((l) => <li><a href={l.trim()} rel="noopener" target="_blank">{l.trim().replace(/^https?:\/\/(www\.)?/, '').slice(0, 60)}</a></li>)}</ul></section>}
           <section class="sc-sec">
@@ -213,6 +241,13 @@ const SECTIONS: [keyof O, string, string][] = [
   .sc-sec :global(ul) { list-style: square; padding-left: 1.2rem; display: grid; gap: .25rem; }
   .sc-sec :global(p) { margin: .3rem 0; }
   .sc-sec a { color: var(--red-text); }
+  .sc-scout { grid-column: 1 / -1; }
+  .sc-scout h3 small { text-transform: none; letter-spacing: 0; }
+  .sc-scout ul { list-style: none !important; padding: 0 !important; }
+  .sc-scout li { display: flex; flex-wrap: wrap; gap: .2rem .8rem; font-size: .9rem; }
+  .sc-scout li span { color: var(--muted); }
+  .sc-scout__btns { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .8rem; }
+  .sc-scout__btns a.btn { color: inherit; }
   .sc-hist { list-style: none !important; padding: 0 !important; }
   .sc-hist li { display: flex; justify-content: space-between; gap: .75rem; padding: .3rem 0; border-bottom: 1px solid var(--line); font-size: .88rem; }
   .sc-hist span { color: var(--muted); }

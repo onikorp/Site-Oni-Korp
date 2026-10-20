@@ -18,6 +18,9 @@ const isoDay = (ms: number | null) => (ms ? new Date(Number(ms)).toLocaleDateStr
 const RANK: Record<string, number> = { titulaire: 0, remplacant: 1, essai: 2 };
 const mine = await rows<Acc>('SELECT * FROM accounts WHERE user_id = ?', user.id);
 const get = (g: string) => mine.find((a) => a.game === g);
+// Smurfs (20/10) : comptes secondaires Riot et Rocket League, relevés par Oni Bot au nom du joueur
+const alts = await rows<Acc>('SELECT * FROM accounts_alt ORDER BY updated_at').catch(() => [] as Acc[]);
+const myAlts = alts.filter((a) => a.user_id === user.id);
 
 const POSTE_ICON: Record<string, string> = { Top: 'lol-top', Jungle: 'lol-jungle', Mid: 'lol-mid', ADC: 'lol-adc', Support: 'lol-support', Duelliste: 'valo-duelliste', Initiateur: 'valo-initiateur', 'Contrôleur': 'valo-controleur', Sentinelle: 'valo-sentinelle' };
 const GAME_LABEL: Record<string, string> = { rl: 'Rocket League', lol: 'League of Legends', valo: 'Valorant', osu: 'osu!' };
@@ -81,6 +84,23 @@ const focus = jeuParam === 'lol' || jeuParam === 'valo' ? 'riot' : jeuParam === 
         )}
         <button class="btn">Enregistrer</button>
       </form>
+      <section class="jo-alts" aria-labelledby="jo-alts-title">
+        <h3 id="jo-alts-title">Smurfs <small>(comptes secondaires, 6 au plus)</small></h3>
+        <p class="eq-note">Leurs parties comptent dans tes stats, le drafter et les débriefs. Ton rang affiché reste celui du compte principal. Pas pour osu!, qui interdit le multi-compte.</p>
+        {myAlts.length > 0 && <ul>{myAlts.map((a) => (
+          <li><span>{a.game === 'riot' ? 'Riot' : 'Rocket League'} · <strong>{a.ident}</strong>{a.region && a.game === 'riot' ? ` (${REGIONS[a.region]?.label ?? a.region})` : ''}</span>
+            <form method="post" action="/api/equipe/outils"><input type="hidden" name="action" value="compte-alt" /><input type="hidden" name="retirer" value="1" /><input type="hidden" name="game" value={a.game} /><input type="hidden" name="ident" value={a.ident} /><input type="hidden" name="back" value={`/equipe/joueurs/${sc.active ? `?r=${sc.active}` : ''}`} /><button class="jo-x" aria-label={`Retirer ${a.ident}`}>Retirer</button></form></li>
+        ))}</ul>}
+        {myAlts.length < 6 && (
+          <form method="post" action="/api/equipe/outils" class="jo-alts__add">
+            <input type="hidden" name="action" value="compte-alt" /><input type="hidden" name="back" value={`/equipe/joueurs/${sc.active ? `?r=${sc.active}` : ''}`} />
+            <label>Jeu<select name="game"><option value="riot">Riot (LoL, Valorant)</option><option value="rl">Rocket League</option></select></label>
+            <label>Pseudo<input name="ident" required maxlength="60" placeholder="Pseudo#TAG ou pseudo Epic" /></label>
+            <label>Région<select name="region">{Object.entries(REGIONS).map(([k, v]) => <option value={k}>{v.label}</option>)}</select></label>
+            <button class="btn btn--ghost">Ajouter</button>
+          </form>
+        )}
+      </section>
       </div>
     </details>
   )}
@@ -107,6 +127,8 @@ const focus = jeuParam === 'lol' || jeuParam === 'valo' ? 'riot' : jeuParam === 
                   <span class="jo-links">
                     {/* Seulement les profils du jeu de ce roster */}
                     {r.game === 'lol' && p.riot && <a href={links.opgg(p.riot.ident, p.riot.region ?? 'euw')} rel="noopener">op.gg</a>}
+                    {(r.game === 'lol' || r.game === 'valo') && alts.filter((a) => a.user_id === p.id && a.game === 'riot').map((a) => <a href={r.game === 'lol' ? links.opgg(a.ident, a.region ?? 'euw') : links.valo(a.ident)} rel="noopener" title={`Smurf : ${a.ident}`}>smurf</a>)}
+                    {r.game === 'rl' && alts.filter((a) => a.user_id === p.id && a.game === 'rl').map((a) => <a href={links.rl(a.ident)} rel="noopener" title={`Smurf : ${a.ident}`}>smurf</a>)}
                     {r.game === 'valo' && p.riot && <a href={links.valo(p.riot.ident)} rel="noopener">tracker</a>}
                     {r.game === 'rl' && p.rl && <a href={links.rl(p.rl.ident)} rel="noopener">tracker</a>}
                     {r.game === 'osu' && p.osu && <a href={links.osu(p.osu.ident)} rel="noopener">osu!</a>}
@@ -180,5 +202,15 @@ const focus = jeuParam === 'lol' || jeuParam === 'valo' ? 'riot' : jeuParam === 
   .eq-note { color: var(--muted); font-size: var(--step--1); }
   @media (max-width: 640px) { .jo-list li { grid-template-columns: 1fr; } .jo-links { justify-content: flex-start; } }
   .jo-more { margin: .75rem 0 1rem; }
+  .jo-alts { display: grid; gap: .6rem; margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--line); max-width: 56rem; }
+  .jo-alts h3 { font-family: var(--font-body); font-size: 1rem; font-weight: 700; margin: 0; }
+  .jo-alts h3 small { font-weight: 400; color: var(--muted); }
+  .jo-alts ul { display: grid; gap: .3rem; margin: 0; padding: 0; list-style: none; }
+  .jo-alts li { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .35rem 0; border-bottom: 1px solid var(--line); font-size: .9rem; }
+  .jo-x { min-height: 32px; padding: 0 .6rem; border: 1px solid var(--line); background: none; color: var(--muted); font: 600 .78rem var(--font-body); cursor: pointer; }
+  .jo-x:hover { color: var(--ink); border-color: var(--ink); }
+  .jo-alts__add { display: flex; flex-wrap: wrap; align-items: end; gap: .6rem; }
+  .jo-alts__add label { display: grid; gap: .25rem; font-weight: 700; font-size: .85rem; }
+  .jo-alts__add :is(input, select) { min-height: 40px; padding: .4rem .6rem; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font: 400 .95rem var(--font-body); }
   .jo-more summary { cursor: pointer; color: var(--muted); font-weight: 700; }
 </style>

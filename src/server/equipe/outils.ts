@@ -45,6 +45,10 @@ export async function ensureTables() {
     `CREATE TABLE IF NOT EXISTS comps (id INTEGER PRIMARY KEY, roster_id INTEGER, map TEXT, agents TEXT, note TEXT, author TEXT, at INTEGER)`,
     `CREATE TABLE IF NOT EXISTS rl_packs (id INTEGER PRIMARY KEY, roster_id INTEGER, code TEXT, title TEXT, kind TEXT, note TEXT, author TEXT, at INTEGER)`,
     `CREATE TABLE IF NOT EXISTS carnet (user_id TEXT PRIMARY KEY, body TEXT, at INTEGER)`,
+    // Smurfs (20/10) : comptes secondaires ; Oni Bot relève leurs parties au nom du joueur, sans courbe de rang
+    `CREATE TABLE IF NOT EXISTS accounts_alt (user_id TEXT, game TEXT, ident TEXT, region TEXT, updated_at INTEGER, PRIMARY KEY (user_id, game, ident))`,
+    // Scouting LoL (20/10) : joueurs adverses à analyser (statut attente → cours → ok / erreur), analysés par Oni Bot
+    `CREATE TABLE IF NOT EXISTS scout_lol (ident TEXT, region TEXT, name TEXT, status TEXT DEFAULT 'attente', data TEXT, error TEXT, requested_by TEXT, at INTEGER, done_at INTEGER, PRIMARY KEY (ident, region))`,
     `CREATE TABLE IF NOT EXISTS goals (id INTEGER PRIMARY KEY, roster_id INTEGER, user_id TEXT, title TEXT, detail TEXT, due INTEGER, status TEXT DEFAULT 'en-cours', progress INTEGER DEFAULT 0, created_by TEXT, at INTEGER, updated_at INTEGER)`,
   ];
   // Un seul aller-retour vers la base pour toutes les tables
@@ -128,6 +132,15 @@ export const GET: APIRoute = async ({ cookies, url }) => {
     const slug = (url.searchParams.get('c') ?? '').replace(/[^a-z]/g, '').slice(0, 30), lane = url.searchParams.get('lane') ?? '';
     const v = await (slug ? (LL_LANES.includes(lane as any) ? llChamp(slug, lane) : Promise.resolve(null)) : llMeta()).catch(() => null);
     return new Response(JSON.stringify(v), { headers: { 'Content-Type': 'application/json', 'Cache-Control': v ? 'private, max-age=3600' : 'no-store' } });
+  }
+  // Scouting LoL : analyses des joueurs demandés (le drafter et la fiche adversaire relisent jusqu'à ce qu'elles soient prêtes)
+  if (url.searchParams.get('type') === 'scout') {
+    const region = (url.searchParams.get('region') ?? 'euw').replace(/[^a-z]/g, '').slice(0, 6) || 'euw';
+    const ids = (url.searchParams.get('ids') ?? '').split(',').map((x) => x.trim().toLowerCase()).filter((x) => x.includes('#')).slice(0, 10);
+    const list = ids.length ? await rows<{ ident: string; name: string | null; status: string; data: string | null; error: string | null; done_at: number | null }>(
+      `SELECT ident, name, status, data, error, done_at FROM scout_lol WHERE region = ? AND ident IN (${ids.map(() => '?').join(',')})`, region, ...ids).catch(() => []) : [];
+    const out = list.map((x) => ({ ident: x.ident, name: x.name, status: x.status, error: x.error, at: x.done_at, data: x.data ? JSON.parse(String(x.data)) : null }));
+    return new Response(JSON.stringify(out), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
   }
   if (url.searchParams.get('type') === 'lv') {
     const id = Number(url.searchParams.get('id'));

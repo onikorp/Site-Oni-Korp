@@ -2,7 +2,7 @@
 // Appelées par POST /api/equipe/outils (outils.ts) selon le champ « action ». Chaque action vérifie elle-même les droits.
 import { exec, rows } from '../../db';
 import { canLead } from '../access';
-import { clip, num, type Action } from './base';
+import { clip, num, riotIds, type Action } from './base';
 
 export const actions: Record<string, Action> = {
   'note': async ({ f, user, back, redirect, canRoster }) => {
@@ -76,6 +76,18 @@ export const actions: Record<string, Action> = {
     // Liens ballchasing.com/replay/<uuid> : Oni Bot importe les stats dans la minute
     const ids = [...String(f.get('replays') ?? '').matchAll(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi)].map((x) => x[1].toLowerCase()).slice(0, 7);
     for (const r of ids) await exec(`INSERT OR IGNORE INTO match_replays (match_id, replay, status, at) VALUES (?,?, 'attente', ?)`, id, r, Date.now());
+    return redirect(back);
+  },
+  // Scouting LoL (20/10) : Oni Bot analyse chaque Riot ID dans la minute ; une analyse de moins de 6 h n'est pas refaite
+  'scout': async ({ f, user, me, back, redirect }) => {
+    if (!me.staff && !me.rosters.some((r) => r.game === 'lol')) return redirect(back);
+    const region = ['euw', 'eune', 'na', 'kr'].includes(clip(f.get('region'), 6)) ? clip(f.get('region'), 6) : 'euw';
+    const now = Date.now();
+    for (const id of riotIds(f.get('ids'))) {
+      await exec(`INSERT INTO scout_lol (ident, region, name, status, requested_by, at) VALUES (?,?,?, 'attente', ?, ?)
+        ON CONFLICT(ident, region) DO UPDATE SET status = 'attente', name = excluded.name, requested_by = excluded.requested_by, at = excluded.at
+        WHERE scout_lol.status IN ('ok', 'erreur') AND (scout_lol.done_at IS NULL OR scout_lol.done_at < ?)`, id.toLowerCase(), region, id, user.id, now, now - 6 * 3600_000);
+    }
     return redirect(back);
   },
   'adversaire': async ({ f, user, back, redirect, canRoster }) => {

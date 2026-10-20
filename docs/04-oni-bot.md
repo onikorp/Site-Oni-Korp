@@ -32,7 +32,7 @@ Le bot du club, seul bot « maison » du serveur (il a remplacé ASYLUM-BOT, Dyn
 | `inhouse` | Parties entre membres : files, appel « Prêt ? », groupes « Jouer ensemble », équilibrage Elo, vocaux, résultat (lu automatiquement sur osu!), cartes de fin, classement par saison. Découpé dans `modules/inhouse/` |
 | `tournois` | Tournois communautaires à élimination directe (4 à 32 équipes), affiches |
 | `stats` | `/stats` (carte de stats d'un joueur), `/compte` (relier ses comptes de jeu) |
-| `trackers` | Relève rangs et parties (Riot, HenrikDev, osu!) pour Inside |
+| `trackers` | Relève rangs et parties (Riot, HenrikDev, osu!) pour Inside, smurfs compris (`accounts_alt`, sans courbe de rang). Analyse les joueurs adverses demandés par le drafter ou une fiche Scouting (`scout_lol`, toutes les minutes, un joueur à la fois, 1,5 s entre deux appels Riot) |
 | `ballchasing` | Parties Rocket League présentes sur ballchasing.com, import des replays de match |
 | `debrief` | Débrief automatique des matchs LoL (notes par joueur, repères) |
 | `niveaux` | XP et niveaux (messages, vocal), `/rang`, `/niveaux` |

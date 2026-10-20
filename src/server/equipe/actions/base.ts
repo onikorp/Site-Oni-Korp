@@ -17,3 +17,6 @@ export const clip = (v: FormDataEntryValue | null, n: number) => String(v ?? '')
 /** Nombre entre 0 et 1 (position sur une carte), sinon null. */
 export const num = (v: FormDataEntryValue | null) => { const x = Number(v); return Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : null; };
 export const GAMES_ACCOUNTS = ['riot', 'rl', 'osu'] as const;
+/** Riot ID trouvés dans un texte libre (« Pseudo#TAG », un par ligne ou séparés par des virgules), sans doublon, 10 au plus. */
+export const riotIds = (v: unknown) => [...new Set([...String(v ?? '').matchAll(/([^\n,#]{3,22})#([\p{L}\p{N}]{2,5})/gu)]
+  .map((m) => `${m[1].replace(/^[\s\-*·•:]+/, '').trim()}#${m[2]}`).filter((x) => x.split('#')[0].length >= 3))].slice(0, 10);

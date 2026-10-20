@@ -1,7 +1,7 @@
 // Actions d'Inside · Compte et profil : sécurité (agenda, déconnexion partout), page Staff, comptes de jeu, setups.
 // Appelées par POST /api/equipe/outils (outils.ts) selon le champ « action ». Chaque action vérifie elle-même les droits.
 import { bumpKey, clearSession } from '../../session';
-import { exec } from '../../db';
+import { exec, rows } from '../../db';
 import { GAMES_ACCOUNTS, clip, type Action } from './base';
 
 export const actions: Record<string, Action> = {
@@ -23,6 +23,18 @@ export const actions: Record<string, Action> = {
       if (ident) await exec(`INSERT INTO accounts VALUES (?,?,?,?,?) ON CONFLICT(user_id, game) DO UPDATE SET ident = excluded.ident, region = excluded.region, updated_at = excluded.updated_at`,
         user.id, g, ident, g === 'riot' ? clip(f.get('region'), 6) || 'euw' : null, Date.now());
       else await exec('DELETE FROM accounts WHERE user_id = ? AND game = ?', user.id, g);
+    }
+    return redirect(back);
+  },
+  // Smurfs (20/10) : ajout ou retrait d'un compte secondaire, Riot ou Rocket League (osu! interdit le multi-compte)
+  'compte-alt': async ({ f, user, back, redirect }) => {
+    const game = clip(f.get('game'), 5), ident = clip(f.get('ident'), 60);
+    if (!['riot', 'rl'].includes(game) || !ident) return redirect(back);
+    if (f.get('retirer') === '1') await exec('DELETE FROM accounts_alt WHERE user_id = ? AND game = ? AND ident = ?', user.id, game, ident);
+    else if (game !== 'riot' || /.+#.+/.test(ident)) {
+      const [n] = await rows<{ n: number }>('SELECT COUNT(*) AS n FROM accounts_alt WHERE user_id = ?', user.id);
+      if (Number(n?.n ?? 0) < 6) await exec('INSERT INTO accounts_alt VALUES (?,?,?,?,?) ON CONFLICT(user_id, game, ident) DO UPDATE SET region = excluded.region, updated_at = excluded.updated_at',
+        user.id, game, ident, game === 'riot' ? clip(f.get('region'), 6) || 'euw' : null, Date.now());
     }
     return redirect(back);
   },

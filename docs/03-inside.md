@@ -160,6 +160,17 @@ Sous la grille des dispos, une ligne « Programme » : le capitaine, le coach ou
 - **Annuaire des scrims** (Scouting) : fiches adverses avec niveau, contact, soirs habituels et statut (à contacter, contacté, partenaire, pas intéressé). Section « Scrims » en tête du Scouting avec le bilan contre nous et un message « Proposer un scrim » prêt à copier (nos prochains soirs jouables ou programmés en Scrim). 29 équipes de `notes/strategie/PROSPECTION.md` importées le 07/10 (statut « À contacter »).
 - **Mon espace** : les objectifs perso créés depuis un Tracker affichent leur valeur actuelle et leur avancement mesurés ; ligne « Mes Trackers » sous les cartes des rosters.
 
+## Assistant de draft LoL, scouting et smurfs (20/10)
+
+- **Équipe d'en face** (drafter) : on colle leurs Riot ID (ou on choisit une fiche Scouting), bouton « Analyser ». L'action `scout` remplit la table `scout_lol` (statut `attente`). Oni Bot analyse un joueur à la fois, en une vingtaine de secondes : rang, postes et champions de ses 12 dernières classées, top 10 de maîtrise. Le drafter relit `GET /api/equipe/outils?type=scout` toutes les 20 s tant qu'une analyse est en cours. Une analyse de moins de 6 h n'est pas refaite. La liste est gardée avec le draft (`prep.opp`, `prep.region`).
+- **Conseil du moment**, sous l'étape de la draft : à notre ban, les 3 meilleurs bans ; à notre pick, les 3 meilleurs picks tous postes confondus ; à leur tour, leurs picks probables. Un clic choisit le champion.
+- **Comment le drafter note un champion** (`lol.client.ts`) :
+  - pour nos picks : lolalytics (force sur le patch, matchups contre leurs picks, synergies avec les nôtres), maîtrise de notre joueur à ce poste (ses classées des 90 jours, smurfs compris), nos propres résultats contre leur pick de la même lane, et les matchups contre les 2 champions favoris de leur joueur de cette lane s'il n'a pas encore choisi ;
+  - pour les bans : lolalytics (force, taux de ban, menaces pour nos picks, duos avec les leurs) plus les favoris de leurs joueurs aux postes encore libres (`oppWeight` : parties récentes, réussite, maîtrise ; poids ×1,5, sans malus si le champion est moyen sur le patch).
+- **Lecture des compos** : « Qui le joue en face » pour chacun de leurs picks, ou l'alerte « absent de leurs dernières classées » (pick préparé, ou joueur hors liste).
+- **Fiche Scouting LoL** : bloc « Analyse des joueurs » (Riot ID trouvés dans « Joueurs et rôles », fonction `riotIds` de `actions/base.ts`), bouton d'analyse, lien « Préparer la draft contre eux » (`/equipe/lol/?vs=…`).
+- **Smurfs** (Joueurs > Relier mes comptes) : table `accounts_alt`, action `compte-alt` (ajout ou retrait, 6 au plus, Riot et Rocket League seulement : osu! interdit le multi-compte). Les parties des smurfs Riot sont relevées au nom du joueur (`perf`), donc comptées dans les Trackers, le drafter et les débriefs. Le rang et les courbes restent ceux du compte principal. Côté Rocket League, le pseudo du smurf sert à retrouver le joueur dans les replays de match. Lien « smurf » à côté de l'op.gg ou du tracker dans la liste du roster.
+
 ## Code commun des Trackers (factorisé le 07/10)
 
 - `tracker.css` : styles communs des Trackers RL, LoL et Valorant (classes `rl-*` et `lt-*`, feuille globale importée par les trois pages).
