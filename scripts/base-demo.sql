@@ -320,3 +320,5 @@ RivalJgl#EUW
 RivalMid#EUW
 RivalAdc#EUW
 RivalSup#EUW','Early game jungle','','','','','100000000000000001',1791265544695);
+-- Liens d'équipe (21/10)
+CREATE TABLE IF NOT EXISTS roster_links (roster_id INTEGER, kind TEXT, url TEXT, by TEXT, at INTEGER, PRIMARY KEY (roster_id, kind));

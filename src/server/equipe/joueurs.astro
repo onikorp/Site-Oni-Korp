@@ -40,7 +40,8 @@ const rosters = await Promise.all(sc.list.map(async (r) => {
     };
   }));
   const riotIds = people.map((p) => p.riot?.ident).filter((x): x is string => !!x);
-  return { r, people, multi: riotIds.length ? links.opggMulti(riotIds, people.find((p) => p.riot)?.riot?.region ?? 'euw') : null };
+  const [link] = r.game === 'lol' ? await rows<{ url: string }>(`SELECT url FROM roster_links WHERE roster_id = ? AND kind = 'opgg'`, r.id).catch(() => []) : [];
+  return { r, people, multi: link?.url ?? (riotIds.length ? links.opggMulti(riotIds, people.find((p) => p.riot)?.riot?.region ?? 'euw') : null) };
 }));
 const games = [...new Set(me.rosters.map((r) => r.game))];
 // Les rangs viennent d'Oni Bot : on regarde s'il en a déjà déposé

@@ -2,6 +2,7 @@
 // Sorti de lol.astro (refacto du 06/10/2026) : chargé par <script src="./lol.client.ts">.
 type Champ = { id: string; key: string; name: string; tags: string[]; info: { attack: number; defense: number; magic: number; difficulty: number }; sprite: [string, number, number] };
 type PoolPlayer = { name: string; poste: string | null; champs: Record<string, { g: number; w: number; vs: Record<string, [number, number]> }> };
+import { opggRegion, riotIds } from './actions/base';
 type Side = 'blue' | 'red';
 // Ordre de draft de tournoi : 3 bans chacun, 6 picks, 2 bans chacun, 4 picks
 const ORDER: [Side, 'ban' | 'pick', number][] = [
@@ -53,7 +54,14 @@ function oppOwner(id: string) {
   for (const p of oppPlayers()) { const c = p.pool.get(id); if (c && (!best || oppWeight(c) > best.w)) best = { p, c, w: oppWeight(c) }; }
   return best;
 }
-const oppIds = () => $<HTMLTextAreaElement>('[data-opp]').value.split(/[\n,]+/).map((x) => x.trim()).filter((x) => /^.{3,}#.{2,5}$/.test(x)).slice(0, 10);
+const oppIds = () => riotIds($<HTMLTextAreaElement>('[data-opp]').value);
+/** Lien op.gg collé : remplacé par les Riot ID qu'il contient, région reprise du lien. */
+function expandOpp() {
+  const ta = $<HTMLTextAreaElement>('[data-opp]');
+  if (!/op\.gg\//i.test(ta.value)) return;
+  const r = opggRegion(ta.value); if (r) $<HTMLSelectElement>('[data-opp-region]').value = r;
+  ta.value = riotIds(ta.value).join('\n');
+}
 let scoutTimer = 0;
 async function loadScouts(poll = 0) {
   clearTimeout(scoutTimer);
@@ -472,6 +480,7 @@ $('[data-opp-go]').addEventListener('click', () => {
 });
 // Analyser : la demande part à Oni Bot (action « scout »), puis la page relit les résultats
 $('[data-opp-scan]').addEventListener('click', async () => {
+  expandOpp();
   const ids = oppIds(), b = $<HTMLButtonElement>('[data-opp-scan]');
   if (!ids.length) { $('[data-opp-status]').textContent = 'Aucun Riot ID valide (format Pseudo#TAG).'; return; }
   b.disabled = true;
@@ -480,8 +489,9 @@ $('[data-opp-scan]').addEventListener('click', async () => {
   b.disabled = false;
   loadScouts();
 });
-root.querySelector('[data-opp-fiche]')?.addEventListener('change', (e) => { const v = (e.target as HTMLSelectElement).value; if (v) { $<HTMLTextAreaElement>('[data-opp]').value = v; loadScouts(); } });
-$('[data-opp]').addEventListener('change', () => loadScouts());
+root.querySelector('[data-opp-fiche]')?.addEventListener('change', (e) => { const v = (e.target as HTMLSelectElement).value; if (v) { $<HTMLTextAreaElement>('[data-opp]').value = v; expandOpp(); loadScouts(); } });
+$('[data-opp]').addEventListener('change', () => { expandOpp(); loadScouts(); });
+$('[data-opp]').addEventListener('paste', () => setTimeout(() => { if (/op\.gg\//i.test($<HTMLTextAreaElement>('[data-opp]').value)) { expandOpp(); loadScouts(); } }, 0));
 $('[data-opp-region]').addEventListener('change', () => loadScouts());
 $('[data-save]').addEventListener('submit', (e) => { if (!steps.length && !prep.bans.length && !prep.plan) { e.preventDefault(); alert('Le draft est vide.'); } });
 

@@ -49,7 +49,7 @@ const profiles = (players: string) => !J?.scouting.profile ? [] : players.split(
   .map((p) => ({ p, url: J.scouting.profile!(p) })).filter((x): x is { p: string; url: string } => !!x.url).slice(0, 10);
 // LoL (20/10) : analyse des joueurs adverses par Oni Bot (scout_lol), et passage direct au drafter avec leurs Riot ID
 type Sc = { ident: string; name: string | null; status: string; error: string | null; data: string | null; done_at: number | null };
-const scoutIds = current && sc.list[0]?.game === 'lol' ? riotIds(current.players) : [];
+const scoutIds = current && sc.list[0]?.game === 'lol' ? riotIds(`${current.players ?? ''}\n${current.links ?? ''}`) : [];
 const scouts = scoutIds.length ? await rows<Sc>(`SELECT ident, name, status, error, data, done_at FROM scout_lol WHERE region = 'euw' AND ident IN (${scoutIds.map(() => '?').join(',')})`, ...scoutIds.map((x) => x.toLowerCase())).catch(() => [] as Sc[]) : [];
 const TIER: Record<string, string> = { IRON: 'Fer', BRONZE: 'Bronze', SILVER: 'Argent', GOLD: 'Or', PLATINUM: 'Platine', EMERALD: 'Émeraude', DIAMOND: 'Diamant', MASTER: 'Maître', GRANDMASTER: 'Grand maître', CHALLENGER: 'Challenger' };
 const champName = (c: string) => (c === 'MonkeyKing' ? 'Wukong' : c.replace(/([a-z])([A-Z])/g, '$1 $2'));

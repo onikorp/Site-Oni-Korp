@@ -49,6 +49,8 @@ export async function ensureTables() {
     `CREATE TABLE IF NOT EXISTS accounts_alt (user_id TEXT, game TEXT, ident TEXT, region TEXT, updated_at INTEGER, PRIMARY KEY (user_id, game, ident))`,
     // Scouting LoL (20/10) : joueurs adverses à analyser (statut attente → cours → ok / erreur), analysés par Oni Bot
     `CREATE TABLE IF NOT EXISTS scout_lol (ident TEXT, region TEXT, name TEXT, status TEXT DEFAULT 'attente', data TEXT, error TEXT, requested_by TEXT, at INTEGER, done_at INTEGER, PRIMARY KEY (ident, region))`,
+    // Liens d'équipe d'un roster (21/10) : kind = 'opgg' (op.gg de l'équipe, collé par le capitaine)
+    `CREATE TABLE IF NOT EXISTS roster_links (roster_id INTEGER, kind TEXT, url TEXT, by TEXT, at INTEGER, PRIMARY KEY (roster_id, kind))`,
     `CREATE TABLE IF NOT EXISTS goals (id INTEGER PRIMARY KEY, roster_id INTEGER, user_id TEXT, title TEXT, detail TEXT, due INTEGER, status TEXT DEFAULT 'en-cours', progress INTEGER DEFAULT 0, created_by TEXT, at INTEGER, updated_at INTEGER)`,
   ];
   // Un seul aller-retour vers la base pour toutes les tables

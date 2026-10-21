@@ -5,7 +5,7 @@
 // op.gg multi de notre équipe et de l'adversaire, analyse de l'équipe d'en face par Oni Bot (scouting, 20/10) qui nourrit
 // les bans et picks conseillés. Champions et icônes : Data Dragon (Riot), à jour automatiquement.
 import Qg from './Qg.astro';
-import { rosterMembers, scope, teamUser } from './outils';
+import { canLead, rosterMembers, scope, teamUser } from './outils';
 import { rows } from '../db';
 import { REGIONS, links } from './stats';
 import { riotIds } from './actions/base';
@@ -20,7 +20,10 @@ const rosterIds = me.rosters.filter((r) => r.game === 'lol').map((r) => r.role_i
 // Riot ID de nos joueurs LoL → op.gg multi
 const ours = rosterIds.length ? await rows<{ ident: string; region: string }>(`SELECT a.ident, a.region FROM accounts a JOIN guild_members g ON g.id = a.user_id
   WHERE a.game = 'riot' AND (${rosterIds.map(() => 'g.roles LIKE ?').join(' OR ')})`, ...rosterIds.map((id) => `%"${id}"%`)) : [];
-const oursMulti = ours.length ? links.opggMulti(ours.map((o) => o.ident), ours[0].region ?? 'euw') : null;
+// op.gg de l'équipe collé par le capitaine (roster_links), sinon calculé avec les Riot ID reliés
+const teamRoster = sc.list.find((r) => r.game === 'lol') ?? null;
+const [teamLink] = teamRoster ? await rows<{ url: string }>(`SELECT url FROM roster_links WHERE roster_id = ? AND kind = 'opgg'`, teamRoster.id).catch(() => []) : [];
+const oursMulti = teamLink?.url ?? (ours.length ? links.opggMulti(ours.map((o) => o.ident), ours[0].region ?? 'euw') : null);
 const games = [...new Set(me.rosters.map((r) => r.game))];
 type PoolPlayer = { name: string; poste: string | null; champs: Record<string, { g: number; w: number; vs: Record<string, [number, number]> }> };
 // Nos résultats quand tel champion est en face (toutes nos parties, tous joueurs)
@@ -45,8 +48,8 @@ for (const r of lolRosters) {
   }
 }
 // Équipe d'en face : fiches Scouting du roster qui contiennent des Riot ID, et liste passée par l'adresse (?vs=, depuis une fiche)
-const fiches = lolRosters.length ? (await rows<{ id: number; name: string; players: string | null }>(`SELECT id, name, players FROM opponents WHERE roster_id IN (${lolRosters.map(() => '?').join(',')}) ORDER BY updated_at DESC LIMIT 30`, ...lolRosters.map((r) => r.id)).catch(() => []))
-  .map((o) => ({ name: o.name, ids: riotIds(o.players) })).filter((o) => o.ids.length) : [];
+const fiches = lolRosters.length ? (await rows<{ id: number; name: string; players: string | null; links: string | null }>(`SELECT id, name, players, links FROM opponents WHERE roster_id IN (${lolRosters.map(() => '?').join(',')}) ORDER BY updated_at DESC LIMIT 30`, ...lolRosters.map((r) => r.id)).catch(() => []))
+  .map((o) => ({ name: o.name, ids: riotIds(`${o.players ?? ''}\n${o.links ?? ''}`) })).filter((o) => o.ids.length) : [];
 const vs = riotIds((Astro.url.searchParams.get('vs') ?? '').replace(/,/g, '\n'));
 ---
 <Qg title="Drafter LoL · Inside" heading="Drafter LoL" lead="Prépare tes drafts dans l'ordre de tournoi, garde-les pour le roster, joue en fearless." current="lol" rosters={me.rosters} staff={me.staff || me.games.length > 0} contenu={me.staff || me.content.length > 0} communaute={me.community} active={sc.active} user={{ name: t.me.member?.name ?? t.user.name, avatar: t.me.member?.avatar ?? t.user.avatar }}>
@@ -88,9 +91,9 @@ const vs = riotIds((Astro.url.searchParams.get('vs') ?? '').replace(/,/g, '\n'))
       <section class="dr-opp" aria-labelledby="dr-opp-title">
         <div class="dr-opp__form">
           <h3 id="dr-opp-title">Équipe d'en face</h3>
-          <p class="eq-note">Colle leurs Riot ID : Oni Bot analyse chaque joueur dans la minute (rang, maîtrise, champions et postes de ses dernières classées). Les bans et picks conseillés en tiennent compte.</p>
+          <p class="eq-note">Colle leurs Riot ID ou leur lien op.gg : Oni Bot analyse chaque joueur dans la minute (rang, maîtrise, champions et postes de ses dernières classées). Les bans et picks conseillés en tiennent compte.</p>
           {fiches.length > 0 && <label>Depuis une fiche Scouting<select data-opp-fiche><option value="">—</option>{fiches.map((f) => <option value={f.ids.join('\n')}>{f.name}</option>)}</select></label>}
-          <label>Riot ID, un par ligne<textarea rows="5" data-opp placeholder="Pseudo#EUW" spellcheck="false">{vs.join('\n')}</textarea></label>
+          <label>Riot ID ou lien op.gg<textarea rows="5" data-opp placeholder="Pseudo#EUW, un par ligne, ou leur lien op.gg" spellcheck="false">{vs.join('\n')}</textarea></label>
           <label>Région<select data-opp-region>{Object.entries(REGIONS).map(([k, v]) => <option value={k}>{v.label}</option>)}</select></label>
           <div class="dr-opp__btns"><button type="button" class="btn" data-opp-scan>Analyser</button><button type="button" class="btn btn--ghost" data-opp-go>op.gg multi</button></div>
           <p class="eq-note" data-opp-status aria-live="polite"></p>
@@ -136,6 +139,13 @@ const vs = riotIds((Astro.url.searchParams.get('vs') ?? '').replace(/,/g, '\n'))
         <div class="dr-scout">
           <h3>Notre roster</h3>
           {oursMulti ? <a class="btn btn--ghost" href={oursMulti} rel="noopener">op.gg de notre roster</a> : <p class="eq-note">Les joueurs relient leur Riot ID dans <a href="/equipe/joueurs/">Joueurs</a> pour l'op.gg du roster.</p>}
+          {teamRoster && canLead(me, teamRoster.id) && (
+            <form method="post" action="/api/equipe/outils" class="dr-link">
+              <input type="hidden" name="action" value="lien-roster" /><input type="hidden" name="roster" value={teamRoster.id} /><input type="hidden" name="back" value={`/equipe/lol/${sc.active ? `?r=${sc.active}` : ''}`} />
+              <label>op.gg de l'équipe <small>(capitaine ; vide = celui des comptes reliés)</small><input type="url" name="url" value={teamLink?.url ?? ''} placeholder="https://op.gg/…/multisearch/euw?summoners=…" maxlength="600" /></label>
+              <button class="btn btn--ghost">Enregistrer</button>
+            </form>
+          )}
           <p class="eq-note">Les smurfs reliés dans Joueurs comptent dans les champions maîtrisés.</p>
         </div>
         <div class="dr-saved">
@@ -170,6 +180,11 @@ const vs = riotIds((Astro.url.searchParams.get('vs') ?? '').replace(/,/g, '\n'))
   .dr-opp__form label { display: grid; gap: .3rem; font-weight: 700; font-size: .85rem; }
   .dr-opp__form :is(textarea, select) { width: 100%; box-sizing: border-box; padding: .45rem .6rem; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font: 400 .9rem var(--font-body); }
   .dr-opp__btns { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .dr-link { display: grid; gap: .5rem; }
+  .dr-link label { display: grid; gap: .3rem; font-weight: 700; font-size: .85rem; }
+  .dr-link small { font-weight: 400; color: var(--muted); }
+  .dr-link input { width: 100%; box-sizing: border-box; padding: .45rem .6rem; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font: 400 .85rem var(--font-body); }
+  .dr-link .btn { justify-self: start; }
   .dr-opp__list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: .75rem; margin: 0; padding: 0; list-style: none; align-content: start; }
   .dr-opp__list :global(.dr-oc) { display: grid; gap: .45rem; padding: .7rem .8rem; border: 1px solid var(--line); }
   .dr-opp__list :global(.dr-oc.is-wait) { opacity: .7; }

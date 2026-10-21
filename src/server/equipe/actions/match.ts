@@ -90,6 +90,14 @@ export const actions: Record<string, Action> = {
     }
     return redirect(back);
   },
+  // op.gg de l'équipe (21/10) : capitaine, coach ou staff ; vide = retiré (on revient à l'op.gg calculé avec les comptes reliés)
+  'lien-roster': async ({ f, user, me, back, redirect }) => {
+    const roster = Number(f.get('roster')), url = clip(f.get('url'), 600);
+    if (!canLead(me, roster)) return redirect(back);
+    if (!url) await exec(`DELETE FROM roster_links WHERE roster_id = ? AND kind = 'opgg'`, roster);
+    else if (/^https:\/\/([\w-]+\.)?op\.gg\//i.test(url)) await exec(`INSERT INTO roster_links VALUES (?, 'opgg', ?, ?, ?) ON CONFLICT(roster_id, kind) DO UPDATE SET url = excluded.url, by = excluded.by, at = excluded.at`, roster, url, user.id, Date.now());
+    return redirect(back);
+  },
   'adversaire': async ({ f, user, back, redirect, canRoster }) => {
     const id = Number(f.get('id'));
     const fields = ['players', 'style', 'forces', 'faiblesses', 'plan', 'links'].map((k) => String(f.get(k) ?? '').slice(0, 4000));

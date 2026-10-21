@@ -58,6 +58,7 @@ Colonne « écrit » : qui crée les lignes. « Lit » : qui s'en sert.
 |---|---|---|---|
 | `accounts` | comptes de jeu reliés (riot, rl, osu ; pseudo, région) | les deux (`/compte`, Inside > Joueurs) | les deux |
 | `accounts_alt` | smurfs : comptes secondaires (riot, rl), plusieurs par joueur ; parties relevées au nom du joueur, sans courbe de rang | site (Inside > Joueurs, action `compte-alt`) | bot (trackers, debrief, ballchasing), site |
+| `roster_links` | liens d'équipe d'un roster, clé (roster_id, kind) ; kind `opgg` = op.gg de l'équipe | site (action `lien-roster`, capitaine ou staff) | site (drafter, Joueurs) |
 | `scout_lol` | joueurs adverses LoL à analyser, clé (Riot ID en minuscules, région) ; `status` attente → cours → ok ou erreur ; `data` JSON (rang, postes, champions récents, maîtrise) | site (action `scout`), bot (résultat) | site (drafter, Scouting) |
 | `perf` | une ligne par partie jouée (JSON : résultat, stats). Id préfixé par la source (`rl:sync:…`, `rl:<replay>`…). Gardée 180 jours | bot (trackers), site (Oni Sync) | site, bot |
 | `stats_cache` | dernières valeurs relevées (rang, profil, maps de la semaine…), clé texte (`lol:euw:pseudo`, `osu:pseudo`, `rl-ranks:pseudo`…) | bot | les deux |
