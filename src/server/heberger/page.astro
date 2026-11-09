@@ -1,0 +1,143 @@
+---
+// Héberger une équipe (09/11) : une équipe extérieure obtient gratuitement un espace sur le Discord d'Oni Korp et l'accès à Inside.
+// Connexion Discord, formulaire, puis Oni Bot crée l'espace dans la minute (modules/hebergement.ts), sans intervention du staff.
+import Base from '../../layouts/Base.astro';
+import site from '../../data/site.json';
+import { currentSession } from '../session';
+import { exec, rows } from '../db';
+import { JEUX } from '../recrutement/postuler';
+import { TABLE } from './heberger';
+
+export const prerender = false;
+
+const user = await currentSession(Astro.cookies);
+const q = Astro.url.searchParams;
+const erreur = q.get('erreur');
+const guild = process.env.DISCORD_GUILD_ID ?? '';
+type Req = { team: string; game: string; status: string; roster_id: number | null };
+let last: Req | undefined, general: string | null = null;
+if (user) {
+  await exec(TABLE).catch(() => {});
+  last = (await rows<Req>(`SELECT team, game, status, roster_id FROM hosting_requests WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`, user.id).catch(() => []))[0];
+  if (last?.status === 'ok' && last.roster_id) general = (await rows<{ general_id: string }>('SELECT general_id FROM rosters WHERE id = ?', last.roster_id).catch(() => []))[0]?.general_id ?? null;
+}
+const pending = last && ['attente', 'cours'].includes(last.status);
+const done = last?.status === 'ok';
+const PROBLEME: Record<string, string> = {
+  'hors-serveur': "Votre compte Discord n'était pas sur le serveur au moment de créer l'espace. Rejoignez-le, puis renvoyez le formulaire.",
+  'nom-pris': "Ce nom d'équipe est déjà pris sur le serveur. Choisissez-en un autre.",
+  doublon: 'Vous avez déjà une équipe hébergée chez nous.',
+  invalide: 'La demande était incomplète. Renvoyez le formulaire.',
+  erreur: "La création de l'espace a échoué. Renvoyez le formulaire, ou ouvrez un ticket dans #support.",
+};
+---
+<Base title="Héberger votre équipe" description="Votre équipe garde son nom ; Oni Korp lui donne gratuitement un espace Discord privé et Inside, l'outil d'équipe du club. Espace créé dans la minute.">
+  <header class="page-head">
+    <div class="wrap">
+      <h1>Héberger votre équipe</h1>
+      <p>Votre équipe garde son nom. Nous lui donnons un espace privé sur notre Discord et Inside, notre outil d'équipe. C'est gratuit, et l'espace est prêt dans la minute.</p>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="wrap hb">
+      <div class="hb-offer">
+        <div>
+          <h2>Ce que vous recevez</h2>
+          <ul>
+            <li><strong>Un espace Discord privé</strong> : salon général, planning, replays et vocal, visibles seulement par votre roster.</li>
+            <li><strong>Inside</strong>, l'outil d'équipe du club : planning et disponibilités, matchs, objectifs, tableau blanc tactique.</li>
+            <li><strong>Les outils de votre jeu</strong> : drafter League of Legends avec analyse de l'équipe d'en face, lineups Valorant, import des replays Rocket League, défis osu!.</li>
+            <li><strong>Oni Bot</strong> : rappels d'entraînement, présences, comptes rendus de match.</li>
+            <li><strong>La vie du club</strong> : inhouses et tournois ouverts à vos joueurs.</li>
+          </ul>
+        </div>
+        <div>
+          <h2>Ce que nous demandons</h2>
+          <ul>
+            <li>Une équipe qui joue et s'entraîne réellement.</li>
+            <li>Le respect du règlement du serveur Discord (salon #règlement).</li>
+            <li>Un capitaine majeur, qui gère son roster et ajoute ses joueurs.</li>
+          </ul>
+          <p class="hb-note">Un espace resté inactif peut être archivé par le staff.</p>
+        </div>
+      </div>
+
+      {!user && (
+        <ol class="hb-steps">
+          <li><strong>Rejoignez le Discord</strong><p>L'espace de votre équipe y sera créé.</p><a class="btn btn--ghost" href={site.discord} rel="noopener">Rejoindre le serveur</a></li>
+          <li><strong>Connectez-vous avec Discord</strong><p>Aucun mot de passe : le site lit seulement votre pseudo et votre avatar.</p><a class="btn" href={`/api/auth/login?next=${encodeURIComponent('/heberger/')}`}>Se connecter avec Discord</a></li>
+          <li><strong>Présentez votre équipe</strong><p>Deux minutes. Oni Bot crée l'espace et vous donne le rôle de capitaine.</p></li>
+        </ol>
+      )}
+
+      {user && pending && (
+        <div class="hb-done">
+          {q.get('envoye') && <p class="hb-ok">C'est envoyé, merci {user.name}.</p>}
+          <p>Oni Bot crée l'espace de <strong>{last!.team}</strong> : moins d'une minute en général.</p>
+          <a class="btn btn--ghost" href="/heberger/">Actualiser</a>
+        </div>
+      )}
+
+      {user && done && (
+        <div class="hb-done">
+          <p class="hb-ok">L'espace de {last!.team} est prêt.</p>
+          <p>Vous êtes capitaine : ajoutez vos joueurs avec <code>/roster ajouter</code> une fois qu'ils ont rejoint le serveur.</p>
+          <div class="hb-btns">
+            {general && <a class="btn" href={`https://discord.com/channels/${guild}/${general}`} rel="noopener">Ouvrir le salon de l'équipe</a>}
+            <a class="btn btn--ghost" href="/equipe/">Ouvrir Inside</a>
+          </div>
+        </div>
+      )}
+
+      {user && !pending && !done && (
+        <form method="post" action="/api/heberger" class="hb-form">
+          {last && PROBLEME[last.status] && <p class="hb-alert">{PROBLEME[last.status]}</p>}
+          {erreur === 'age' && <p class="hb-alert">Le capitaine doit être majeur.</p>}
+          {erreur === 'champs' && <p class="hb-alert">Il manque quelque chose : vérifiez chaque champ (présentation : quelques lignes au moins ; nom d'équipe : lettres, chiffres, espaces).</p>}
+          <p class="hb-who">{user.avatar && <img src={user.avatar} alt="" width="32" height="32" crossorigin="anonymous" referrerpolicy="no-referrer" />}Connecté en tant que <strong>{user.name}</strong>, futur capitaine</p>
+          <div class="hb-row">
+            <label class="hb-field">Nom de l'équipe<input name="equipe" required minlength="2" maxlength="30" /></label>
+            <label class="hb-field">Jeu<select name="jeu">{Object.entries(JEUX).map(([k, l]) => <option value={k}>{l}</option>)}</select></label>
+          </div>
+          <div class="hb-row hb-row--3">
+            <label class="hb-field">Joueurs<input name="joueurs" required inputmode="numeric" pattern="[0-9]{1,2}" maxlength="2" /></label>
+            <label class="hb-field">Âge du capitaine<input name="age" required inputmode="numeric" pattern="[0-9]{1,2}" maxlength="2" /></label>
+            <label class="hb-field">Niveau de l'équipe<input name="niveau" required maxlength="200" placeholder="Ex. : Platine-Émeraude" /></label>
+          </div>
+          <label class="hb-field">Présentez votre équipe<textarea name="presentation" required minlength="20" maxlength="1000" rows="5" placeholder="Depuis quand vous jouez ensemble, vos objectifs, vos soirs d'entraînement"></textarea></label>
+          <label class="hb-field">Liens <small>(facultatif : réseaux, tracker, tournois)</small><input name="liens" maxlength="300" /></label>
+          <button class="btn">Créer l'espace de mon équipe</button>
+        </form>
+      )}
+    </div>
+  </section>
+</Base>
+
+<style>
+  .hb { display: grid; gap: 3rem; }
+  .hb-offer { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: 2rem 3rem; }
+  .hb-offer h2 { font-size: var(--step-1); margin-bottom: .75rem; }
+  .hb-offer ul { display: grid; gap: .6rem; padding-left: 1.2rem; }
+  .hb-note { margin-top: 1rem; color: var(--muted); font-size: var(--step--1); }
+  .hb-steps { display: grid; gap: 1.5rem; counter-reset: hb; max-width: 44rem; }
+  .hb-steps li { counter-increment: hb; display: grid; gap: .4rem; justify-items: start; padding-left: 3.25rem; position: relative; }
+  .hb-steps li::before { content: counter(hb); position: absolute; left: 0; top: -.2rem; font-family: var(--font-display); font-size: 2rem; color: var(--red-text); }
+  .hb-steps strong { font-size: 1.15rem; }
+  .hb-steps p { color: var(--muted); }
+  .hb-done { display: grid; gap: 1rem; justify-items: start; max-width: 44rem; }
+  .hb-ok { font-family: var(--font-display); font-size: var(--step-2); }
+  .hb-btns { display: flex; flex-wrap: wrap; gap: .75rem; }
+  .hb-alert { border-left: 4px solid var(--lacquer); padding: .6rem 1rem; background: color-mix(in srgb, var(--lacquer) 10%, transparent); }
+  .hb-who { display: flex; align-items: center; gap: .5rem; }
+  .hb-who img { border-radius: 50%; }
+  .hb-form { display: grid; gap: 1.25rem; max-width: 44rem; }
+  .hb-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .hb-row--3 { grid-template-columns: 6rem 9rem 1fr; }
+  @media (max-width: 560px) { .hb-row, .hb-row--3 { grid-template-columns: 1fr; } }
+  .hb-field { display: grid; gap: .4rem; font-weight: 700; }
+  .hb-field small { font-weight: 400; color: var(--muted); }
+  .hb-field :is(input, select, textarea) { width: 100%; box-sizing: border-box; min-height: 44px; padding: .6rem .75rem; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font: 400 1rem var(--font-body); }
+  .hb-field :is(input, select, textarea):focus-visible { outline: 3px solid var(--lacquer-hi); outline-offset: 0; }
+  .hb-form .btn { justify-self: start; }
+</style>

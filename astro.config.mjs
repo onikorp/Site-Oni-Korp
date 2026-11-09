@@ -69,6 +69,8 @@ const api = {
       route('/api/equipe/tableau', './src/server/equipe/tableau-api.ts');
       route('/postuler', './src/server/recrutement/page.astro');
       route('/api/postuler', './src/server/recrutement/postuler.ts');
+      route('/heberger', './src/server/heberger/page.astro');
+      route('/api/heberger', './src/server/heberger/heberger.ts');
     },
   },
 };
